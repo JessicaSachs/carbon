@@ -77,6 +77,8 @@ export const MetaLinks = React.memo(() => {
         }.min.css`
         return <Link key={themeDef.id} href={href} />
       })}
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"/>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js"/>
     </React.Fragment>
   )
 })

@@ -15,6 +15,8 @@ import BackgroundSelect from './BackgroundSelect'
 import Carbon from './Carbon'
 import ExportMenu from './ExportMenu'
 import CopyMenu from './CopyMenu'
+import LoadingModal from './LoadingModal'
+import RecordButton from './RecordButton'
 import Themes from './Themes'
 import TweetButton from './TweetButton'
 import FontFace from './FontFace'
@@ -31,15 +33,15 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_LANGUAGE,
   DEFAULT_THEME,
-  FONTS,
+  FONTS
 } from '../lib/constants'
 import { serializeState, getRouteState } from '../lib/routing'
 import { getSettings, unescapeHtml, formatCode, omit } from '../lib/util'
 
-const languageIcon = <LanguageIcon />
+const languageIcon = <LanguageIcon/>
 
 const SnippetToolbar = dynamic(() => import('./SnippetToolbar'), {
-  loading: () => null,
+  loading: () => null
 })
 
 const getConfig = omit(['code'])
@@ -54,10 +56,16 @@ class Editor extends React.Component {
       ...DEFAULT_SETTINGS,
       ...this.props.snippet,
       loading: true,
+      recording: false,
+      codeState: []
     }
 
     this.exportImage = this.exportImage.bind(this)
     this.copyImage = this.copyImage.bind(this)
+    this.updateCode = this.updateCode.bind(this)
+    this.toggleRecording = this.toggleRecording.bind(this)
+    this.collectSequentialSnapshots = this.collectSequentialSnapshots.bind(this)
+    this.finalizeRecording = this.finalizeRecording.bind(this)
     this.upload = this.upload.bind(this)
     this.updateSetting = this.updateSetting.bind(this)
     this.updateLanguage = this.updateLanguage.bind(this)
@@ -77,7 +85,7 @@ class Editor extends React.Component {
       ...(this.props.snippet ? null : getSettings(localStorage)),
       // and then URL params
       ...queryState,
-      loading: false,
+      loading: false
     }
 
     // Makes sure the slash in 'application/X' is decoded
@@ -107,19 +115,26 @@ class Editor extends React.Component {
 
   onUpdate = debounce(updates => this.props.onUpdate(updates), 750, {
     trailing: true,
-    leading: true,
+    leading: true
   })
-  updateState = updates => this.setState(updates, () => this.onUpdate(this.state))
+  updateState = async updates => this.setState(updates, () => this.onUpdate(this.state))
 
-  updateCode = code => this.updateState({ code })
+  async updateCode(code) {
+    let codeState = []
+    if (this.state.recording) {
+      codeState = this.state.codeState.concat(code)
+    }
+    return this.updateState({ code, codeState })
+  }
 
   async getCarbonImage(
     {
       format,
       type,
+      code = this.state.code,
       squared = this.state.squaredImage,
       exportSize = (EXPORT_SIZES_HASH[this.state.exportSize] || DEFAULT_EXPORT_SIZE).value,
-      includeTransparentRow = false,
+      includeTransparentRow = false
     } = { format: 'png' }
   ) {
     // if safari, get image from api
@@ -130,6 +145,7 @@ class Editor extends React.Component {
       const encodedState = serializeState({
         ...this.state,
         highlights: { ...themeConfig.highlights, ...this.state.highlights },
+        code
       })
       return this.context.image(encodedState)
     }
@@ -160,7 +176,7 @@ class Editor extends React.Component {
       style: {
         transform: `scale(${exportSize})`,
         'transform-origin': 'center',
-        background: squared ? this.state.backgroundColor : 'none',
+        background: squared ? this.state.backgroundColor : 'none'
       },
       filter: n => {
         if (n.className) {
@@ -178,7 +194,7 @@ class Editor extends React.Component {
         return true
       },
       width,
-      height,
+      height
     }
 
     // current font-family used
@@ -189,24 +205,24 @@ class Editor extends React.Component {
         if (format === 'svg') {
           return (
             domtoimage
-              .toSvg(node, config)
-              .then(dataUrl =>
-                dataUrl
-                  .replace(/&nbsp;/g, '&#160;')
-                  // https://github.com/tsayen/dom-to-image/blob/fae625bce0970b3a039671ea7f338d05ecb3d0e8/src/dom-to-image.js#L551
-                  .replace(/%23/g, '#')
-                  .replace(/%0A/g, '\n')
-                  // remove other fonts which are not used
-                  .replace(
-                    new RegExp('@font-face\\s+{\\s+font-family: (?!"*' + fontFamily + ').*?}', 'g'),
-                    ''
-                  )
+            .toSvg(node, config)
+            .then(dataUrl =>
+              dataUrl
+              .replace(/&nbsp;/g, '&#160;')
+              // https://github.com/tsayen/dom-to-image/blob/fae625bce0970b3a039671ea7f338d05ecb3d0e8/src/dom-to-image.js#L551
+              .replace(/%23/g, '#')
+              .replace(/%0A/g, '\n')
+              // remove other fonts which are not used
+              .replace(
+                new RegExp('@font-face\\s+{\\s+font-family: (?!"*' + fontFamily + ').*?}', 'g'),
+                ''
               )
-              // https://stackoverflow.com/questions/7604436/xmlparseentityref-no-name-warnings-while-loading-xml-into-a-php-file
-              .then(dataUrl => dataUrl.replace(/&(?!#?[a-z0-9]+;)/g, '&amp;'))
-              .then(uri => uri.slice(uri.indexOf(',') + 1))
-              .then(data => new Blob([data], { type: 'image/svg+xml' }))
-              .then(data => window.URL.createObjectURL(data))
+            )
+            // https://stackoverflow.com/questions/7604436/xmlparseentityref-no-name-warnings-while-loading-xml-into-a-php-file
+            .then(dataUrl => dataUrl.replace(/&(?!#?[a-z0-9]+;)/g, '&amp;'))
+            .then(uri => uri.slice(uri.indexOf(',') + 1))
+            .then(data => new Blob([data], { type: 'image/svg+xml' }))
+            .then(data => window.URL.createObjectURL(data))
           )
         }
 
@@ -254,10 +270,75 @@ class Editor extends React.Component {
     return this.getCarbonImage({ format: 'png', type: 'blob' }).then(blob =>
       navigator.clipboard.write([
         new window.ClipboardItem({
-          'image/png': blob,
-        }),
+          'image/png': blob
+        })
       ])
     )
+  }
+
+  collectSequentialSnapshots(allCode, acc, idx) {
+    const currentCode = allCode[idx]
+    if (!allCode.length) { return }
+    if (idx <= allCode.length) {
+      this.setState({
+        code: currentCode
+      }, async () => {
+        acc[idx] = await this.getCarbonImage({ format: 'png' })
+        this.collectSequentialSnapshots(allCode, acc, idx + 1)
+      })
+    }
+  }
+
+  finalizeRecording(codeState) {
+    this.props.updateProcessing(true)
+    const imageBlobs = []
+    const finish = () => this.props.updateProcessing(false)
+    this.collectSequentialSnapshots(codeState, imageBlobs, 0)
+
+    const readyId = setInterval(() => {
+        if (imageBlobs.length === codeState.length) {
+          clearInterval(readyId)
+          Promise.all(imageBlobs.map(myBlob => {
+            return new Promise(function(resolved) {
+              var i = new Image()
+              i.onload = function() {
+                // wait for the onload to get the width and height
+                resolved(i)
+              }
+              i.src = myBlob
+            })
+          })).then((finalImages) => {
+            var gif = new GIF({
+              workers: 2,
+              quality: 10,
+              workerScript: '/gif.worker.js'
+            })
+
+            console.log('FINAL IMAGES', { finalImages })
+            finalImages.forEach(img => gif.addFrame(img, { delay: 200 }))
+
+            gif.on('finished', function(blob) {
+              finish()
+              window.open(URL.createObjectURL(blob))
+            })
+
+            gif.render()
+          })
+        }
+      }
+      , 300)
+  }
+
+  async toggleRecording() {
+    await this.updateState({
+      recording: !this.state.recording
+    })
+
+    // ending the recording, process images
+    if (!this.state.recording) {
+      this.finalizeRecording(this.state.codeState)
+    }
+    this.setState({ codeState: [] })
   }
 
   resetDefaultSettings() {
@@ -277,7 +358,7 @@ class Editor extends React.Component {
         backgroundImage: file.content,
         backgroundImageSelection: null,
         backgroundMode: 'image',
-        preset: null,
+        preset: null
       })
     } else {
       this.updateState({ code: file.content, language: 'auto' })
@@ -297,7 +378,7 @@ class Editor extends React.Component {
         code:
           code.replace(unsplashPhotographerCredit, '') +
           `\n\n// Photo by ${photographer.name} on Unsplash`,
-        preset: null,
+        preset: null
       }))
     } else {
       this.updateState({ ...changes, preset: null })
@@ -309,8 +390,8 @@ class Editor extends React.Component {
     this.setState(({ highlights = {} }) => ({
       highlights: {
         ...highlights,
-        ...updates,
-      },
+        ...updates
+      }
     }))
 
   createTheme = theme => {
@@ -329,32 +410,32 @@ class Editor extends React.Component {
 
   format = () =>
     formatCode(this.state.code)
-      .then(this.updateCode)
-      .catch(() => {
-        // create toast here in the future
-      })
+    .then(this.updateCode)
+    .catch(() => {
+      // create toast here in the future
+    })
 
   handleSnippetCreate = () =>
     this.context.snippet
-      .create(this.state)
-      .then(data => this.props.setSnippet(data))
-      .then(() =>
-        this.props.setToasts({
-          type: 'SET',
-          toasts: [{ children: 'Snippet duplicated!', timeout: 3000 }],
-        })
-      )
+    .create(this.state)
+    .then(data => this.props.setSnippet(data))
+    .then(() =>
+      this.props.setToasts({
+        type: 'SET',
+        toasts: [{ children: 'Snippet duplicated!', timeout: 3000 }]
+      })
+    )
 
   handleSnippetDelete = () =>
     this.context.snippet
-      .delete(this.props.snippet.id)
-      .then(() => this.props.setSnippet(null))
-      .then(() =>
-        this.props.setToasts({
-          type: 'SET',
-          toasts: [{ children: 'Snippet deleted', timeout: 3000 }],
-        })
-      )
+    .delete(this.props.snippet.id)
+    .then(() => this.props.setSnippet(null))
+    .then(() =>
+      this.props.setToasts({
+        type: 'SET',
+        toasts: [{ children: 'Snippet deleted', timeout: 3000 }]
+      })
+    )
 
   render() {
     const {
@@ -364,7 +445,7 @@ class Editor extends React.Component {
       backgroundImage,
       backgroundMode,
       code,
-      exportSize,
+      exportSize
     } = this.state
 
     const config = getConfig(this.state)
@@ -412,10 +493,11 @@ class Editor extends React.Component {
               applyPreset={this.applyPreset}
               getCarbonImage={this.getCarbonImage}
             />
-            <div id="style-editor-button" />
+            <div id="style-editor-button"/>
             <div className="buttons">
-              <CopyMenu copyImage={this.copyImage} />
-              <TweetButton onClick={this.upload} />
+              <CopyMenu copyImage={this.copyImage}/>
+              <RecordButton isRecording={this.state.recording} toggleRecording={this.toggleRecording}/>
+              <TweetButton onClick={this.upload}/>
               <ExportMenu
                 onChange={this.updateSetting}
                 exportImage={this.exportImage}
@@ -494,8 +576,10 @@ function isImage(file) {
 }
 
 Editor.defaultProps = {
-  onUpdate: () => {},
-  onReset: () => {},
+  onUpdate: () => {
+  },
+  onReset: () => {
+  }
 }
 
 export default Editor

@@ -2,6 +2,7 @@
 import React from 'react'
 import { useAsyncCallback } from 'actionsack'
 
+// Ours
 import Editor from './Editor'
 import Toasts from './Toasts'
 import { useAPI } from './ApiContext'
@@ -10,6 +11,7 @@ import { useAuth } from './AuthContext'
 import { THEMES } from '../lib/constants'
 import { updateRouteState } from '../lib/routing'
 import { getThemes, saveThemes, clearSettings, saveSettings } from '../lib/util'
+import LoadingModal from './LoadingModal'
 
 function onReset() {
   clearSettings()
@@ -39,6 +41,7 @@ function toastsReducer(curr, action) {
 }
 
 function EditorContainer(props) {
+  const [processing, updateProcessing] = React.useState(false)
   const [themes, updateThemes] = React.useState(THEMES)
   const api = useAPI()
   const user = useAuth()
@@ -99,14 +102,17 @@ function EditorContainer(props) {
     }
   }
 
+  const loadingModal = processing ? <LoadingModal/> : ''
   return (
     <>
       <Toasts toasts={toasts} />
+      { loadingModal }
       <Editor
         {...props}
         themes={themes}
         updateThemes={updateThemes}
         snippet={snippet}
+        updateProcessing={updateProcessing}
         setSnippet={setSnippet}
         setToasts={setToasts}
         onUpdate={onEditorUpdate}
